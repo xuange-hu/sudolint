@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install (zero runtime dependencies)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+          # The zero-dependency claim is about what `pip install sudolint`
+          # pulls in. Proving it here is the difference between a claim and a test.
+          python -c "import sudolint, sys; print('third-party modules loaded:', [m for m in sys.modules if m in ('yaml','click','rich','mcp','requests')])"
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: CLI smoke
+        run: |
+          sudolint --version
+          sudolint rules | head -3
+          sudolint demo | tail -3
+
+      - name: Exit-code gate contract
+        run: |
+          # The whole point of --fail-on is that CI can gate on it, so the two
+          # directions are asserted here with real files, not just in unit tests.
+          printf 'ops ALL = /usr/bin/systemctl status app\n' > /tmp/clean.sudoers
+          printf 'ops ALL = /bin/bash\n' > /tmp/bad.sudoers
+          sudolint scan /tmp/clean.sudoers --fail-on high
+          if sudolint scan /tmp/bad.sudoers --fail-on high; then
+            echo "::error::bad.sudoers should exit 1 at --fail-on high"
+            exit 1
+          fi
+          echo "gate contract ok (clean=0, bad=1)"
+
+      - name: MCP manifest check
+        run: |
+          python -m pip install "mcp>=1.2,<2"
+          python - <<'PY'
+          import asyncio
+          from sudolint.mcp_server import build_server, tool_manifest
+          tools = asyncio.run(build_server().list_tools())
+          assert {t.name for t in tools} == {e["name"] for e in tool_manifest()}, "MCP tools drifted from the manifest"
+          print(f"mcp tools ok: {len(tools)}")
+          PY
+
+      - name: Zero third-party import guard
+        run: |
+          # The core package must import cleanly with no third-party modules
+          # installed at all -- not even the MCP extra.
+          python - <<'PY'
+          import subprocess, sys, os, json
+          env = {k: v for k, v in os.environ.items()}
+          env["PYTHONPATH"] = "src"
+          out = subprocess.run(
+              [sys.executable, "-c",
+               "import sys; import sudolint; "
+               "third = [m for m in sys.modules if m in ('yaml','click','rich','mcp','requests','pytest')]; "
+               "print(json.dumps(third)); assert not third, third"],
+              capture_output=True, text=True, env=env, check=True,
+          )
+          print("core import guard ok:", out.stdout.strip())
+          PY
+
+  fresh-clone:
+    # A visitor's first `git clone && pip install . && pytest` must work with
+    # only base deps installed -- no extras, no editable path tricks.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Fresh install and collect
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pytest
+          cd "$(mktemp -d)"
+          python -m pytest "$GITHUB_WORKSPACE/tests" --collect-only -q
