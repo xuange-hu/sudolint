@@ -77,8 +77,9 @@ jobs:
           env["PYTHONPATH"] = "src"
           out = subprocess.run(
               [sys.executable, "-c",
-               "import sys; import sudolint; "
-               "third = [m for m in sys.modules if m in ('yaml','click','rich','mcp','requests','pytest')]; "
+               "import sys, json; before = set(sys.modules); import sudolint; "
+               "third = [m for m in set(sys.modules) - before "
+               "if m in ('yaml','click','rich','mcp','requests','pytest')]; "
                "print(json.dumps(third)); assert not third, third"],
               capture_output=True, text=True, env=env, check=True,
           )
