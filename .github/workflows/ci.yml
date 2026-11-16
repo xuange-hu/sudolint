@@ -104,3 +104,32 @@ jobs:
           python -m pip install . pytest
           cd "$(mktemp -d)"
           python -m pytest "$GITHUB_WORKSPACE/tests" --collect-only -q
+  badge-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.12'
+      # Everything the test suite can exercise must be installed here, otherwise
+      # self-skipping modules make the real count environment-dependent.
+      - name: Install with optional test deps
+        run: |
+          python -m pip install -e ".[mcp]" pytest pyyaml
+      - name: README test-count badge vs pytest collection
+        run: |
+          # -o addopts= neutralises a project-level addopts="-q": with the -q below
+          # it becomes -qq and pytest -qq drops the "N tests collected" line.
+          # The badge pattern matches both "tests-99%20passing" and
+          # "tests-99-brightgreen" badge spellings.
+          actual=$(python -m pytest --collect-only -q -o addopts= 2>/dev/null | grep -oE "[0-9]+ tests? collected" | grep -oE "^[0-9]+" || true)
+          claimed=$(grep -oE "tests-[0-9]+" README.md | grep -oE "[0-9]+" | head -1 || true)
+          echo "collected=${actual:-NOTHING} claimed=${claimed:-NONE}"
+          if [ -z "$actual" ]; then
+            echo "::warning::pytest collected nothing - the badge check did not run"
+          elif [ "$actual" != "$claimed" ]; then
+            echo "::warning::README badge says $claimed but pytest collects $actual"
+          fi
