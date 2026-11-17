@@ -1,6 +1,7 @@
 # sudolint
 
 [![CI](https://github.com/xuange-hu/sudolint/actions/workflows/ci.yml/badge.svg)](https://github.com/xuange-hu/sudolint/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-132-brightgreen)](tests/)
 [![version-0.1.0](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
 [![Python >= 3.10](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/sudolint/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
